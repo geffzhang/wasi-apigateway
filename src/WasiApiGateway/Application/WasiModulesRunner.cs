@@ -1,10 +1,9 @@
-using System.Linq;
 using System;
-using System.Text.RegularExpressions;
 using System.IO;
-using Wasmtime;
-using System.Threading.Tasks;
 using System.Threading;
+using System.Threading.Tasks;
+using Wasmtime;
+using Module = Wasmtime.Module;
 
 namespace WasiApiGateway.Application
 {
@@ -12,11 +11,11 @@ namespace WasiApiGateway.Application
     {
         public static async Task<string> Run(byte[] moduleContent, string message, CancellationToken cancellationToken)
         {
-            var engineBuilder = new EngineBuilder();
             
-            using var engine = engineBuilder.Build();
+            using var engine = new Engine(); 
             using var module = Module.FromBytes(engine, "module", moduleContent);
-            using var host = new Host(engine);
+            using var store = new Store(engine);
+            using var linker = new Linker(engine);
 
             var stdinFilePath = Path.GetTempFileName();
             await File.WriteAllTextAsync(stdinFilePath, message, cancellationToken);
@@ -25,14 +24,16 @@ namespace WasiApiGateway.Application
 
             var stderrFilePath = Path.GetTempFileName();
 
-            host.DefineWasi("wasi_snapshot_preview1", new WasiConfiguration()
+            linker.DefineWasi();
+
+            store.SetWasiConfiguration(new WasiConfiguration()
                 .WithStandardInput(stdinFilePath)
                 .WithStandardOutput(stdoutFilePath)
                 .WithStandardError(stderrFilePath));
             
-            using dynamic instance = host.Instantiate(module);
+            using dynamic instance = linker.Instantiate(store, module);
 
-            
+
             string reply = await await Task.WhenAny(
                 Task.Run(async () =>
                 {
